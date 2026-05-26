@@ -1,0 +1,12 @@
+# Antigravity CLI/Agent folders
+.antigravitycli/
+
+# Log files (often searched by qsl, should not be committed)
+*.log
+
+# Windows thumbnail database / desktop configuration
+Thumbs.db
+desktop.ini
+
+# VS Code settings / workspace configuration
+.vscode/
