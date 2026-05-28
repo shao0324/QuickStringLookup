@@ -53,19 +53,19 @@
 
 ---
 
-## ⚙️ 設定全域 `qs1` 快捷指令
+## ⚙️ 設定全域 `qsl` 快捷指令
 
-為了能在**任何目錄**下以更簡潔的指令啟動（例如：`qs1 .\G9_MoveTestData.log`），需要進行以下設定：
+為了能在**任何目錄**下以更簡潔的指令啟動（例如：`qsl .\G9_MoveTestData.log`），需要進行以下設定：
 
-在本機二進位資料夾（已存在於系統 `PATH` 中）內建立一個輕量級包裝檔 `qs1.cmd`。
+在本機二進位資料夾（已存在於系統 `PATH` 中）內建立一個輕量級包裝檔 `qsl.cmd`。
 
 1. 檢查或建立目錄：`C:\Users\<您的使用者名稱>\.local\bin`
-2. 在該目錄下建立名為 `qs1.cmd` 的檔案，內容如下：
+2. 在該目錄下建立名為 `qsl.cmd` 的檔案，內容如下：
    ```cmd
    @echo off
    powershell -ExecutionPolicy Bypass -File "D:\workspace\QuickStringLookup\qsl.ps1" %*
    ```
-3. 重新開啟終端機，您即可在任何資料夾中直接輸入 `qs1` 進行搜尋！
+3. 重新開啟終端機，您即可在任何資料夾中直接輸入 `qsl` 進行搜尋！
 
 ---
 
