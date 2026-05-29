@@ -27,7 +27,9 @@ param(
     [int]$Context = 0,
 
     [ValidateSet("Literal", "Regex")]
-    [string]$Mode = "Literal"
+    [string]$Mode = "Literal",
+
+    [string]$FileEncoding = "Default"
 )
 
 # Define ANSI codes for styling
@@ -51,6 +53,26 @@ $Gray = "$esc[90m"
 $Highlight = "$esc[48;5;220;38;5;16m"
 $FileHighlight = "$esc[1;38;5;82m"   # Bold lime green
 $InfoHighlight = "$esc[1;38;5;45m"   # Bold cyan
+
+# Ensure terminal renders UTF-8 output correctly
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
+# Helper: read all lines from a file with the specified encoding
+function Read-FileLines {
+    param([string]$FilePath, [string]$EncodingName)
+    $enc = switch ($EncodingName.ToLower()) {
+        "utf8"    { [System.Text.Encoding]::UTF8 }
+        "default" { [System.Text.Encoding]::Default }
+        "big5"    { [System.Text.Encoding]::GetEncoding(950) }
+        "gbk"     { [System.Text.Encoding]::GetEncoding(936) }
+        default   {
+            try   { [System.Text.Encoding]::GetEncoding($EncodingName) }
+            catch { [System.Text.Encoding]::Default }
+        }
+    }
+    return [System.IO.File]::ReadAllLines($FilePath, $enc)
+}
 
 # Function to print a range of lines from the file
 function Show-Lines {
@@ -83,7 +105,7 @@ function Show-Lines {
         return
     }
 
-    $allLines = Get-Content $FilePath
+    $allLines = Read-FileLines -FilePath $FilePath -EncodingName $FileEncoding
     $totalLines = $allLines.Count
 
     if ($StartLine -gt $totalLines) {
@@ -126,6 +148,7 @@ function Show-Help {
     Write-Host "  ${Cyan}:c${Reset} or ${Cyan}:case${Reset}        Toggle Case Sensitivity"
     Write-Host "  ${Cyan}:ctx <n>${Reset}            Set context lines (e.g., :ctx 2)"
     Write-Host "  ${Cyan}:p <start>,<end> [keyword]${Reset}   Print lines in range, max 100 lines; optional keyword is highlighted (e.g., :p 1,20 or :p 1,20 error)"
+    Write-Host "  ${Cyan}:enc <encoding>${Reset}             Set file encoding (e.g., :enc UTF8 / :enc Big5 / :enc Default)"
     Write-Host "  ${Cyan}:h${Reset} or ${Cyan}:help${Reset}       Show this help reference"
     Write-Host ""
 }
@@ -154,8 +177,7 @@ function Invoke-Search {
 
     # Build parameter table for Select-String
     $params = @{
-        Path = $FilePath
-        Pattern = $finalPattern
+        Pattern   = $finalPattern
         AllMatches = $true
     }
     if ($IsCaseSensitive) {
@@ -166,7 +188,8 @@ function Invoke-Search {
     }
 
     try {
-        $results = Select-String @params
+        $fileLines = Read-FileLines -FilePath $FilePath -EncodingName $FileEncoding
+        $results = $fileLines | Select-String @params
         if (-not $results) {
             Write-Host "${Yellow}No matches found for '$SearchPattern'${Reset}"
             return
@@ -300,19 +323,24 @@ if ($Pattern) {
     return
 }
 
+# Function to display the status header (called at startup and after settings changes)
+function Show-Header {
+    Clear-Host
+    Write-Host "============================================================${Reset}"
+    Write-Host "🔍  ${Bold}Quick String Look (qsl)${Reset}"
+    Write-Host "------------------------------------------------------------"
+    Write-Host "  Target File : ${FileHighlight}$Path${Reset}"
+    Write-Host "  Search Mode : ${InfoHighlight}$Mode${Reset}"
+    Write-Host "  Sensitivity : ${InfoHighlight}$(if ($CaseSensitive) { "Case-Sensitive" } else { "Case-Insensitive" })${Reset}"
+    Write-Host "  Context     : ${InfoHighlight}$Context line(s)${Reset}"
+    Write-Host "  Encoding    : ${InfoHighlight}$FileEncoding${Reset}"
+    Write-Host "------------------------------------------------------------"
+    Write-Host "  Commands: ${Cyan}:q${Reset} (exit), ${Cyan}:f <path>${Reset} (change file), ${Cyan}:help${Reset} (more options)"
+    Write-Host "============================================================`n"
+}
+
 # Welcome Header for Interactive Mode
-Clear-Host
-$fileNameOnly = Split-Path $Path -Leaf
-Write-Host "============================================================${Reset}"
-Write-Host "🔍  ${Bold}Quick String Look (qsl)${Reset}"
-Write-Host "------------------------------------------------------------"
-Write-Host "  Target File : ${FileHighlight}$Path${Reset}"
-Write-Host "  Search Mode : ${InfoHighlight}$Mode${Reset}"
-Write-Host "  Sensitivity : ${InfoHighlight}$(if ($CaseSensitive) { "Case-Sensitive" } else { "Case-Insensitive" })${Reset}"
-Write-Host "  Context     : ${InfoHighlight}$Context line(s)${Reset}"
-Write-Host "------------------------------------------------------------"
-Write-Host "  Commands: ${Cyan}:q${Reset} (exit), ${Cyan}:f <path>${Reset} (change file), ${Cyan}:help${Reset} (more options)"
-Write-Host "============================================================`n"
+Show-Header
 
 # Start prompt loop
 while ($true) {
@@ -351,7 +379,7 @@ while ($true) {
                     $resolvedArg = Resolve-Path $arg -ErrorAction SilentlyContinue
                     if ($resolvedArg -and (Test-Path $resolvedArg.Path -PathType Leaf)) {
                         $Path = $resolvedArg.Path
-                        Write-Host "Target file switched to: ${FileHighlight}$Path${Reset}"
+                        Show-Header
                     } else {
                         Write-Host "${Red}Error: File '$arg' not found or invalid.${Reset}"
                     }
@@ -359,22 +387,30 @@ while ($true) {
             }
             { $_ -in ":l", ":literal" } {
                 $Mode = "Literal"
-                Write-Host "Switched to ${InfoHighlight}Literal${Reset} search mode."
+                Show-Header
             }
             { $_ -in ":r", ":regex" } {
                 $Mode = "Regex"
-                Write-Host "Switched to ${InfoHighlight}Regex${Reset} search mode."
+                Show-Header
             }
             { $_ -in ":c", ":case" } {
                 $CaseSensitive = -not $CaseSensitive
-                Write-Host "Case sensitivity toggled. Current: ${InfoHighlight}$(if ($CaseSensitive) { "Case-Sensitive" } else { "Case-Insensitive" })${Reset}"
+                Show-Header
             }
             { $_ -in ":ctx", ":context" } {
                 if ($arg -match '^\d+$') {
                     $Context = [int]$arg
-                    Write-Host "Context lines set to ${InfoHighlight}$Context${Reset}."
+                    Show-Header
                 } else {
                     Write-Host "${Red}Error: Context must be a non-negative integer. Example: :ctx 2${Reset}"
+                }
+            }
+            { $_ -in ":enc", ":encoding" } {
+                if ($arg) {
+                    $FileEncoding = $arg.Trim()
+                    Show-Header
+                } else {
+                    Write-Host "${Red}Error: Please specify an encoding. Example: :enc UTF8 / :enc Big5 / :enc Default${Reset}"
                 }
             }
             { $_ -in ":p", ":print" } {
