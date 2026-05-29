@@ -52,6 +52,69 @@ $Highlight = "$esc[48;5;220;38;5;16m"
 $FileHighlight = "$esc[1;38;5;82m"   # Bold lime green
 $InfoHighlight = "$esc[1;38;5;45m"   # Bold cyan
 
+# Function to print a range of lines from the file
+function Show-Lines {
+    param(
+        [string]$FilePath,
+        [int]$StartLine,
+        [int]$EndLine,
+        [string]$Keyword = ""
+    )
+
+    if (-not (Test-Path $FilePath -PathType Leaf)) {
+        Write-Host "${Red}Error: Target file '$FilePath' does not exist.${Reset}"
+        return
+    }
+
+    if ($StartLine -lt 1) {
+        Write-Host "${Red}Error: Start line must be at least 1.${Reset}"
+        return
+    }
+
+    if ($EndLine -lt $StartLine) {
+        Write-Host "${Red}Error: End line must be >= start line.${Reset}"
+        return
+    }
+
+    $maxRange = 100
+    $range = $EndLine - $StartLine + 1
+    if ($range -gt $maxRange) {
+        Write-Host "${Red}Error: Line range cannot exceed $maxRange lines. Requested: $range lines (${StartLine}-${EndLine}).${Reset}"
+        return
+    }
+
+    $allLines = Get-Content $FilePath
+    $totalLines = $allLines.Count
+
+    if ($StartLine -gt $totalLines) {
+        Write-Host "${Yellow}Start line $StartLine exceeds file length ($totalLines lines).${Reset}"
+        return
+    }
+
+    $actualEnd = [Math]::Min($EndLine, $totalLines)
+    $keywordPattern = if ($Keyword) { [Regex]::Escape($Keyword) } else { $null }
+
+    Write-Host "${Gray}--- Lines $StartLine to $actualEnd (of $totalLines total)$(if ($Keyword) { " | Keyword: '$Keyword'" })---${Reset}"
+    for ($i = $StartLine; $i -le $actualEnd; $i++) {
+        $lineText = $allLines[$i - 1]
+
+        if ($keywordPattern) {
+            $highlighted = ""
+            $lastIdx = 0
+            foreach ($m in ([regex]::Matches($lineText, $keywordPattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase))) {
+                $highlighted += $lineText.Substring($lastIdx, $m.Index - $lastIdx)
+                $highlighted += "${Highlight}" + $lineText.Substring($m.Index, $m.Length) + "${Reset}"
+                $lastIdx = $m.Index + $m.Length
+            }
+            $highlighted += $lineText.Substring($lastIdx)
+            Write-Host "  ${Gray}$($i.ToString().PadLeft(5)) |${Reset} $highlighted"
+        } else {
+            Write-Host "  ${Gray}$($i.ToString().PadLeft(5)) |${Reset} $lineText"
+        }
+    }
+    Write-Host "${Gray}----------------------------------${Reset}"
+}
+
 # Function to show help menu
 function Show-Help {
     Write-Host ""
@@ -62,6 +125,7 @@ function Show-Help {
     Write-Host "  ${Cyan}:r${Reset} or ${Cyan}:regex${Reset}       Switch to Regular Expression search mode"
     Write-Host "  ${Cyan}:c${Reset} or ${Cyan}:case${Reset}        Toggle Case Sensitivity"
     Write-Host "  ${Cyan}:ctx <n>${Reset}            Set context lines (e.g., :ctx 2)"
+    Write-Host "  ${Cyan}:p <start>,<end> [keyword]${Reset}   Print lines in range, max 100 lines; optional keyword is highlighted (e.g., :p 1,20 or :p 1,20 error)"
     Write-Host "  ${Cyan}:h${Reset} or ${Cyan}:help${Reset}       Show this help reference"
     Write-Host ""
 }
@@ -311,6 +375,14 @@ while ($true) {
                     Write-Host "Context lines set to ${InfoHighlight}$Context${Reset}."
                 } else {
                     Write-Host "${Red}Error: Context must be a non-negative integer. Example: :ctx 2${Reset}"
+                }
+            }
+            { $_ -in ":p", ":print" } {
+                if ($arg -match '^(\d+),(\d+)(?:\s+(.+))?$') {
+                    $kw = if ($Matches[3]) { $Matches[3].Trim() } else { "" }
+                    Show-Lines -FilePath $Path -StartLine ([int]$Matches[1]) -EndLine ([int]$Matches[2]) -Keyword $kw
+                } else {
+                    Write-Host "${Red}Error: Please specify a line range. Example: :p 1,20 or :p 1,20 keyword${Reset}"
                 }
             }
             { $_ -in ":h", ":help" } {
